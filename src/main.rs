@@ -69,8 +69,9 @@ async fn convert_image_handler(
         _ => return Json(ConvertResponse { output: "unsupported format".to_string() })
     };
     let form = format!("output.{}", req.format);
+    let saved_to = format!("image saved to output.{}", req.format);
     match img.save_with_format(form, format) {
-        Ok(_) => Json(ConvertResponse { output: "image saved".to_string() }),
+        Ok(_) => Json(ConvertResponse { output: saved_to }),
         Err(_) => Json(ConvertResponse { output: "failed to save image".to_string() }),
     }
 }
