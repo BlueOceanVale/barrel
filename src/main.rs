@@ -2,7 +2,11 @@ use axum::{Json, Router};
 use axum::routing::{get, post};
 use tokio::net::TcpListener;
 use serde::{Deserialize, Serialize};
+use tokio::task::JoinError;
+use std::io::Cursor;
 use std::path::Path;
+use axum::extract::Multipart;
+use image::ImageReader;
 
 #[derive(Serialize)]
 struct FileInfo {
@@ -56,23 +60,51 @@ async fn file_info(
 }
 
 async fn convert_image_handler(
-    Json(req): Json<ConvertRequest>,
+    mut multipart: Multipart,
 ) -> Json<ConvertResponse> {
-    let img = match image::open(req.input) {
-        Ok(value) => value,
-        Err(_) => return Json(ConvertResponse { output: "failed to convert image".to_string() })
-    };
-    let format = match req.format.as_str() {
-        "webp" => image::ImageFormat::WebP,
-        "png" => image::ImageFormat::Png,
-        "jpeg" => image::ImageFormat::Jpeg,
-        _ => return Json(ConvertResponse { output: "unsupported format".to_string() })
-    };
-    let form = format!("output.{}", req.format);
-    let saved_to = format!("image saved to output.{}", req.format);
-    match img.save_with_format(form, format) {
-        Ok(_) => Json(ConvertResponse { output: saved_to }),
-        Err(_) => Json(ConvertResponse { output: "failed to save image".to_string() }),
+    println!("1");
+    while let Some(field) = match multipart.next_field().await {
+        Ok(field) => field,
+        Err(_) => {
+            return Json(ConvertResponse {
+                output: "failed to read multipart".to_string(),
+            });
+            println!("2");
+        }
+    } {
+        println!("{:?}", field.name());
+        match field.bytes().await {
+            Ok(bytes) => {
+                let cursor = Cursor::new(bytes);
+                let reader = ImageReader::new(cursor);
+                let img = match reader.decode(){
+                    Ok(img) => img,
+                    Err(_) => return Json(ConvertResponse { output: "failed to get image".to_string() })
+                };
+                println!("received bytes");
+            }
+            Err(_) => println!("failed to read field"),
+        };
     }
+
+    println!("3");
+
+    Json(ConvertResponse { output: "received multipart".to_string() })
+    //let img = match image::open(req.input) {
+    //    Ok(value) => value,
+    //    Err(_) => return Json(ConvertResponse { output: "failed to convert image".to_string() })
+    //};
+    //let format = match req.format.as_str() {
+    //    "webp" => image::ImageFormat::WebP,
+    //    "png" => image::ImageFormat::Png,
+    //    "jpeg" => image::ImageFormat::Jpeg,
+    //    _ => return Json(ConvertResponse { output: "unsupported format".to_string() })
+    //};
+    //let form = format!("output.{}", req.format);
+    //let saved_to = format!("image saved to output.{}", req.format);
+    //match img.save_with_format(form, format) {
+    //    Ok(_) => Json(ConvertResponse { output: saved_to }),
+    //    Err(_) => Json(ConvertResponse { output: "failed to save image".to_string() }),
+    //}
 }
 
