@@ -111,6 +111,12 @@ async fn convert_image_handler(
     let img = match reader.decode() {
         Ok(img) => {
             println!("✅ 4: IMAGE DECODED");
+            
+            match img.save_with_format("output.webp", image::ImageFormat::WebP) {
+                Ok(_) => println!("Saved image as webp"),
+                Err(e) => println!("Failed to save image: {}", e)
+            };
+            
             img
         }
         Err(e) => {
