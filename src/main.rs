@@ -2,7 +2,6 @@ use axum::{Json, Router};
 use axum::routing::{get, post};
 use tokio::net::TcpListener;
 use serde::{Deserialize, Serialize};
-use tokio::task::JoinError;
 use std::io::Cursor;
 use std::path::Path;
 use axum::extract::Multipart;
@@ -19,11 +18,6 @@ struct FileQuery {
     name: String,
 }
 
-#[derive(Deserialize)]
-struct ConvertRequest {
-    input: String,
-    format: String,
-}
 
 #[derive(Serialize)]
 struct ConvertResponse {
@@ -37,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/files/info", post(file_info))
         .route("/images/convert", post(convert_image_handler));
 
-    let listener = TcpListener::bind("127.0.0.1:3000").await?;
+    let listener = TcpListener::bind("127.0.0.1:5000").await?;
     axum::serve(listener, app).await?;
 
     Ok(())
@@ -62,34 +56,78 @@ async fn file_info(
 async fn convert_image_handler(
     mut multipart: Multipart,
 ) -> Json<ConvertResponse> {
-    println!("1");
-    while let Some(field) = match multipart.next_field().await {
-        Ok(field) => field,
-        Err(_) => {
-            return Json(ConvertResponse {
-                output: "failed to read multipart".to_string(),
-            });
-            println!("2");
+    println!("🔥 1: HANDLER STARTED");
+
+    println!("⏳ waiting for field...");
+    let field = match multipart.next_field().await {
+        Ok(Some(field)) => {
+            println!("✅ 2: GOT FIELD");
+            field
         }
-    } {
-        println!("{:?}", field.name());
-        match field.bytes().await {
-            Ok(bytes) => {
-                let cursor = Cursor::new(bytes);
-                let reader = ImageReader::new(cursor);
-                let img = match reader.decode(){
-                    Ok(img) => img,
-                    Err(_) => return Json(ConvertResponse { output: "failed to get image".to_string() })
-                };
-                println!("received bytes");
-            }
-            Err(_) => println!("failed to read field"),
-        };
-    }
+        Ok(None) => {
+            println!("❌ NO FIELD");
+            return Json(ConvertResponse {
+                output: "no field".to_string(),
+            });
+        }
+        Err(e) => {
+            println!("❌ MULTIPART ERROR: {:?}", e);
+            return Json(ConvertResponse {
+                output: "multipart error".to_string(),
+            });
+        }
+    };
 
-    println!("3");
+    println!("📦 field name: {:?}", field.name());
 
-    Json(ConvertResponse { output: "received multipart".to_string() })
+    println!("⏳ reading bytes...");
+    let bytes = match field.bytes().await {
+        Ok(bytes) => {
+            println!("✅ 3: GOT {} BYTES", bytes.len());
+            bytes
+        }
+        Err(e) => {
+            println!("❌ BYTES ERROR: {:?}", e);
+            return Json(ConvertResponse {
+                output: "bytes error".to_string(),
+            });
+        }
+    };
+
+    println!("⏳ decoding image...");
+
+    let cursor = Cursor::new(bytes);
+
+    let reader = match ImageReader::new(cursor).with_guessed_format() {
+        Ok(reader) => reader,
+        Err(e) => {
+            println!("❌ FORMAT ERROR: {:?}", e);
+            return Json(ConvertResponse {
+                output: "failed to detect image format".to_string(),
+            });
+        }
+    };
+
+    let img = match reader.decode() {
+        Ok(img) => {
+            println!("✅ 4: IMAGE DECODED");
+            img
+        }
+        Err(e) => {
+            println!("❌ DECODE ERROR: {:?}", e);
+            return Json(ConvertResponse {
+                output: "failed to decode image".to_string(),
+            });
+        }
+    };
+
+    println!("🎉 5: EVERYTHING WORKED");
+
+    Json(ConvertResponse {
+        output: "received and decoded image".to_string(),
+    })
+}
+
     //let img = match image::open(req.input) {
     //    Ok(value) => value,
     //    Err(_) => return Json(ConvertResponse { output: "failed to convert image".to_string() })
@@ -106,5 +144,5 @@ async fn convert_image_handler(
     //    Ok(_) => Json(ConvertResponse { output: saved_to }),
     //    Err(_) => Json(ConvertResponse { output: "failed to save image".to_string() }),
     //}
-}
+
 
