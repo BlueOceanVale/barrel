@@ -56,12 +56,11 @@ async fn file_info(
 async fn convert_image_handler(
     mut multipart: Multipart,
 ) -> Json<ConvertResponse> {
-    println!("🔥 1: HANDLER STARTED");
+    let mut image_bytes = None;
+    let mut format = None;
 
-    println!("⏳ waiting for field...");
-    let field = match multipart.next_field().await {
-        Ok(Some(field)) => {
-            println!("✅ 2: GOT FIELD");
+    while let Some(field)= match multipart.next_field().await {
+        Ok(field) => {
             field
         }
         Ok(None) => {
@@ -76,27 +75,25 @@ async fn convert_image_handler(
                 output: "multipart error".to_string(),
             });
         }
+    } {
+        match field.name() {
+            Some("file") => {
+                image_bytes = Some(field.bytes().await.unwrap())
+            }
+
+            Some("format") => {
+                format = Some(field.text().await.unwrap())
+            }
+
+            _ => {}
+        }
+    }
+    let image_bytes = match image_bytes {
+        Some(image_bytes) => image_bytes,
+        None => return Json(ConvertResponse { output: "failed to get image bytes".to_string() })
     };
 
-    println!("📦 field name: {:?}", field.name());
-
-    println!("⏳ reading bytes...");
-    let bytes = match field.bytes().await {
-        Ok(bytes) => {
-            println!("✅ 3: GOT {} BYTES", bytes.len());
-            bytes
-        }
-        Err(e) => {
-            println!("❌ BYTES ERROR: {:?}", e);
-            return Json(ConvertResponse {
-                output: "bytes error".to_string(),
-            });
-        }
-    };
-
-    println!("⏳ decoding image...");
-
-    let cursor = Cursor::new(bytes);
+    let cursor = Cursor::new(image_bytes);
 
     let reader = match ImageReader::new(cursor).with_guessed_format() {
         Ok(reader) => reader,
@@ -108,11 +105,22 @@ async fn convert_image_handler(
         }
     };
 
+    let output_format = match format.as_deref() {
+        Some("webp") => image::ImageFormat::WebP,
+        Some("jpeg") => image::ImageFormat::Jpeg,
+        Some("png") => image::ImageFormat::Png,
+        _ => {
+            return Json(ConvertResponse { output: "failed to match format".to_string() })
+        }
+    };
+
+    let outputname = format!("output.{}", format.as_deref().unwrap());
+
     let img = match reader.decode() {
         Ok(img) => {
             println!("✅ 4: IMAGE DECODED");
             
-            match img.save_with_format("output.webp", image::ImageFormat::WebP) {
+            match img.save_with_format(outputname, output_format) {
                 Ok(_) => println!("Saved image as webp"),
                 Err(e) => println!("Failed to save image: {}", e)
             };
@@ -126,8 +134,6 @@ async fn convert_image_handler(
             });
         }
     };
-
-    println!("🎉 5: EVERYTHING WORKED");
 
     Json(ConvertResponse {
         output: "received and decoded image".to_string(),
@@ -149,6 +155,5 @@ async fn convert_image_handler(
     //match img.save_with_format(form, format) {
     //    Ok(_) => Json(ConvertResponse { output: saved_to }),
     //    Err(_) => Json(ConvertResponse { output: "failed to save image".to_string() }),
-    //}
 
 
