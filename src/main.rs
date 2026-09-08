@@ -1,3 +1,5 @@
+use axum::http::response;
+use axum::response::Response;
 use axum::{Json, Router};
 use axum::routing::{get, post};
 use tokio::net::TcpListener;
@@ -53,9 +55,10 @@ async fn file_info(
     Json(FileInfo { name: quer.name, extension })
 }
 
+
 async fn convert_image_handler(
     mut multipart: Multipart,
-) -> Json<ConvertResponse> {
+) -> Response {
     let mut image_bytes = None;
     let mut format = None;
 
@@ -65,15 +68,17 @@ async fn convert_image_handler(
         }
         Ok(None) => {
             println!("❌ NO FIELD");
-            return Json(ConvertResponse {
-                output: "no field".to_string(),
-            });
+            return Response::builder()
+                .header("Content-Type", "text/plain")
+                .body("no field".into())
+                .unwrap();
         }
         Err(e) => {
             println!("❌ MULTIPART ERROR: {:?}", e);
-            return Json(ConvertResponse {
-                output: "multipart error".to_string(),
-            });
+            return Response::builder()
+                .header("Content-Type", "text/plain")
+                .body("multipart error".into())
+                .unwrap();
         }
     } {
         match field.name() {
@@ -90,7 +95,10 @@ async fn convert_image_handler(
     }
     let image_bytes = match image_bytes {
         Some(image_bytes) => image_bytes,
-        None => return Json(ConvertResponse { output: "failed to get image bytes".to_string() })
+        None => return Response::builder()
+            .header("Content-Type", "text/plain")
+            .body("failed to get image bytes".into())
+            .unwrap(),
     };
 
     let cursor = Cursor::new(image_bytes);
@@ -99,9 +107,10 @@ async fn convert_image_handler(
         Ok(reader) => reader,
         Err(e) => {
             println!("❌ FORMAT ERROR: {:?}", e);
-            return Json(ConvertResponse {
-                output: "failed to detect image format".to_string(),
-            });
+            return Response::builder()
+                .header("Content-Type", "text/plain")
+                .body("failed to detect image format".into())
+                .unwrap();
         }
     };
 
@@ -110,50 +119,44 @@ async fn convert_image_handler(
         Some("jpeg") => image::ImageFormat::Jpeg,
         Some("png") => image::ImageFormat::Png,
         _ => {
-            return Json(ConvertResponse { output: "failed to match format".to_string() })
+            return Response::builder()
+                .header("Content-Type", "text/plain")
+                .body("failed to match format".into())
+                .unwrap()
         }
     };
-
-    let outputname = format!("output.{}", format.as_deref().unwrap());
 
     let img = match reader.decode() {
         Ok(img) => {
-            println!("✅ 4: IMAGE DECODED");
-            
-            match img.save_with_format(outputname, output_format) {
-                Ok(_) => println!("Saved image as webp"),
-                Err(e) => println!("Failed to save image: {}", e)
-            };
-            
-            img
+        println!("✅ 4: IMAGE DECODED");
+
+        let mut output = Cursor::new(Vec::new());
+
+        match img.write_to(&mut output, output_format) {
+            Ok(_) => println!("✅ IMAGE ENCODED"),
+            Err(e) => {
+                println!("❌ ENCODE ERROR: {}", e);
+                return Response::builder()
+                    .header("Content-Type", "text/plain")
+                    .body("failed to encode image".into())
+                    .unwrap();
+            }
         }
+
+        let bytes = output.into_inner();
+        
+        return Response::builder()
+            .header("Content-Type", "image/webp")
+            .body(bytes.into())
+            .unwrap();
+    }
         Err(e) => {
-            println!("❌ DECODE ERROR: {:?}", e);
-            return Json(ConvertResponse {
-                output: "failed to decode image".to_string(),
-            });
+            println!("DECODE ERROR: {:?}", e);
+            return Response::builder()
+                .header("Content-Type", "text/plain")
+                .body("failed to decode image".into())
+                .unwrap();
         }
     };
 
-    Json(ConvertResponse {
-        output: "received and decoded image".to_string(),
-    })
 }
-
-    //let img = match image::open(req.input) {
-    //    Ok(value) => value,
-    //    Err(_) => return Json(ConvertResponse { output: "failed to convert image".to_string() })
-    //};
-    //let format = match req.format.as_str() {
-    //    "webp" => image::ImageFormat::WebP,
-    //    "png" => image::ImageFormat::Png,
-    //    "jpeg" => image::ImageFormat::Jpeg,
-    //    _ => return Json(ConvertResponse { output: "unsupported format".to_string() })
-    //};
-    //let form = format!("output.{}", req.format);
-    //let saved_to = format!("image saved to output.{}", req.format);
-    //match img.save_with_format(form, format) {
-    //    Ok(_) => Json(ConvertResponse { output: saved_to }),
-    //    Err(_) => Json(ConvertResponse { output: "failed to save image".to_string() }),
-
-
