@@ -1,4 +1,3 @@
-use pdf::file::File;
 use axum::response::Response;
 use axum::{Json, Router};
 use axum::routing::{get, post};
@@ -8,6 +7,10 @@ use std::io::Cursor;
 use std::path::Path;
 use axum::extract::Multipart;
 use image::ImageReader;
+
+mod handlers;
+
+use handlers::pdf::pdf_merge;
 
 #[derive(Serialize)]
 struct FileInfo {
@@ -56,41 +59,6 @@ async fn file_info(
     Json(FileInfo { name: quer.name, extension })
 }
 
-async fn pdf_merge(
-    mut multipart: Multipart,
-) -> Response {
-    let mut files = Vec::new();
-
-    while let Some(field) = match multipart.next_field().await {
-        Ok(field) => field,
-        Ok(None) => break,
-        Err(_) => {
-            return Response::builder()
-                .header("Content-Type", "text/plain")
-                .body("multipart error".into())
-                .unwrap();
-        }
-    } {
-        if field.name() == Some("file") {
-            match field.bytes().await {
-                Ok(bytes) => files.push(bytes),
-                Err(_) => {
-                    return Response::builder()
-                        .header("Content-Type", "text/plain")
-                        .body("failed to read file".into())
-                        .unwrap();
-                }
-            }
-        }
-    }
-
-    println!("received {} PDFs", files.len());
-
-    Response::builder()
-        .header("Content-Type", "text/plain")
-        .body("received PDFs".into())
-        .unwrap()
-}
 
 async fn convert_image_handler(
     mut multipart: Multipart,
