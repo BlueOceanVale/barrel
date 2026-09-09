@@ -1,4 +1,4 @@
-use axum::http::response;
+use pdf::file::File;
 use axum::response::Response;
 use axum::{Json, Router};
 use axum::routing::{get, post};
@@ -31,6 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/files/info", post(file_info))
+        .route("/pdf/merge", post(pdf_merge))
         .route("/images/convert", post(convert_image_handler));
 
     let listener = TcpListener::bind("127.0.0.1:5000").await?;
@@ -55,6 +56,41 @@ async fn file_info(
     Json(FileInfo { name: quer.name, extension })
 }
 
+async fn pdf_merge(
+    mut multipart: Multipart,
+) -> Response {
+    let mut files = Vec::new();
+
+    while let Some(field) = match multipart.next_field().await {
+        Ok(field) => field,
+        Ok(None) => break,
+        Err(_) => {
+            return Response::builder()
+                .header("Content-Type", "text/plain")
+                .body("multipart error".into())
+                .unwrap();
+        }
+    } {
+        if field.name() == Some("file") {
+            match field.bytes().await {
+                Ok(bytes) => files.push(bytes),
+                Err(_) => {
+                    return Response::builder()
+                        .header("Content-Type", "text/plain")
+                        .body("failed to read file".into())
+                        .unwrap();
+                }
+            }
+        }
+    }
+
+    println!("received {} PDFs", files.len());
+
+    Response::builder()
+        .header("Content-Type", "text/plain")
+        .body("received PDFs".into())
+        .unwrap()
+}
 
 async fn convert_image_handler(
     mut multipart: Multipart,
@@ -126,6 +162,13 @@ async fn convert_image_handler(
         }
     };
 
+    let content_type = match format.as_deref() {
+        Some("webp") => "image/webp",
+        Some("jpeg") => "image/jpeg",
+        Some("png") => "image/png",
+        _ => "text/plain",
+    };
+
     let img = match reader.decode() {
         Ok(img) => {
         println!("✅ 4: IMAGE DECODED");
@@ -146,7 +189,7 @@ async fn convert_image_handler(
         let bytes = output.into_inner();
         
         return Response::builder()
-            .header("Content-Type", "image/webp")
+            .header("Content-Type", content_type)
             .body(bytes.into())
             .unwrap();
     }
