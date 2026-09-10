@@ -5,16 +5,18 @@ pub async fn pdf_merge(
 ) -> Response {
     let mut files = Vec::new();
 
-    while let Some(field) = match multipart.next_field().await {
-        Ok(field) => field,
-        Ok(None) => break,
-        Err(_) => {
-            return Response::builder()
-                .header("Content-Type", "text/plain")
-                .body("multipart error".into())
-                .unwrap();
-        }
-    } {
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(_) => {
+                return Response::builder()
+                    .header("Content-Type", "text/plain")
+                    .body("multipart error".into())
+                    .unwrap();
+            }
+        };
+
         if field.name() == Some("file") {
             match field.bytes().await {
                 Ok(bytes) => files.push(bytes),
@@ -27,6 +29,7 @@ pub async fn pdf_merge(
             }
         }
     }
+
 
     println!("received {} PDFs", files.len());
 
