@@ -9,43 +9,39 @@ pub async fn convert_image_handler(
     let mut image_bytes = None;
     let mut format = None;
 
-    while let Some(field)= match multipart.next_field().await {
-        Ok(field) => {
-            field
-        }
-        Ok(None) => {
-            println!("❌ NO FIELD");
-            return Response::builder()
-                .header("Content-Type", "text/plain")
-                .body("no field".into())
-                .unwrap();
-        }
-        Err(e) => {
-            println!("❌ MULTIPART ERROR: {:?}", e);
-            return Response::builder()
-                .header("Content-Type", "text/plain")
-                .body("multipart error".into())
-                .unwrap();
-        }
-    } {
+    loop {
+        let Some(field) = (match multipart.next_field().await {
+            Ok(field) => field,
+            Err(e) => {
+                println!("❌ MULTIPART ERROR: {:?}", e);
+                return Response::builder()
+                    .header("Content-Type", "text/plain")
+                    .body("multipart error".into())
+                    .unwrap();
+            }
+        }) else {
+            break;
+        };
+
         match field.name() {
             Some("file") => {
                 image_bytes = Some(field.bytes().await.unwrap())
             }
-
             Some("format") => {
                 format = Some(field.text().await.unwrap())
             }
-
             _ => {}
         }
     }
+
     let image_bytes = match image_bytes {
         Some(image_bytes) => image_bytes,
-        None => return Response::builder()
-            .header("Content-Type", "text/plain")
-            .body("failed to get image bytes".into())
-            .unwrap(),
+        None => {
+            return Response::builder()
+                .header("Content-Type", "text/plain")
+                .body("failed to get image bytes".into())
+                .unwrap();
+        }
     };
 
     let cursor = Cursor::new(image_bytes);
@@ -69,7 +65,7 @@ pub async fn convert_image_handler(
             return Response::builder()
                 .header("Content-Type", "text/plain")
                 .body("failed to match format".into())
-                .unwrap()
+                .unwrap();
         }
     };
 
@@ -81,29 +77,7 @@ pub async fn convert_image_handler(
     };
 
     let img = match reader.decode() {
-        Ok(img) => {
-        println!("✅ 4: IMAGE DECODED");
-
-        let mut output = Cursor::new(Vec::new());
-
-        match img.write_to(&mut output, output_format) {
-            Ok(_) => println!("✅ IMAGE ENCODED"),
-            Err(e) => {
-                println!("❌ ENCODE ERROR: {}", e);
-                return Response::builder()
-                    .header("Content-Type", "text/plain")
-                    .body("failed to encode image".into())
-                    .unwrap();
-            }
-        }
-
-        let bytes = output.into_inner();
-        
-        return Response::builder()
-            .header("Content-Type", content_type)
-            .body(bytes.into())
-            .unwrap();
-    }
+        Ok(img) => img,
         Err(e) => {
             println!("DECODE ERROR: {:?}", e);
             return Response::builder()
@@ -113,4 +87,59 @@ pub async fn convert_image_handler(
         }
     };
 
+    let mut output = Cursor::new(Vec::new());
+
+    match img.write_to(&mut output, output_format) {
+        Ok(_) => println!("✅ IMAGE ENCODED"),
+        Err(e) => {
+            println!("❌ ENCODE ERROR: {}", e);
+            return Response::builder()
+                .header("Content-Type", "text/plain")
+                .body("failed to encode image".into())
+                .unwrap();
+        }
+    }
+
+    let bytes = output.into_inner();
+
+    Response::builder()
+        .header("Content-Type", content_type)
+        .body(bytes.into())
+        .unwrap()
+}
+
+pub async fn resize_image_handler(mut multipart: Multipart) -> Response {
+    let mut image_bytes = None;
+
+    loop {
+        let Some(field) = (match multipart.next_field().await {
+            Ok(field) => field,
+            Err(_) => {
+                return Response::builder()
+                    .header("Content-Type", "text/plain")
+                    .body("multipart error".into())
+                    .unwrap();
+            }
+        }) else {
+            break;
+        };
+
+        match field.name() {
+            Some("file") => {
+                image_bytes = Some(field.bytes().await.unwrap());
+            }
+            _ => {}
+        }
+    }
+
+    match image_bytes {
+        Some(_) => Response::builder()
+            .header("Content-Type", "text/plain")
+            .body("resize not implemented".into())
+            .unwrap(),
+        None => Response::builder()
+            .header("Content-Type", "text/plain")
+            .body("failed to get image bytes".into())
+            .unwrap(),
+    }
 }
