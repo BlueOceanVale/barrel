@@ -19,7 +19,9 @@ pub async fn pdf_merge(
 
         if field.name() == Some("file") {
             match field.bytes().await {
-                Ok(bytes) => files.push(bytes),
+                Ok(bytes) => {
+                    files.push(bytes)
+                },
                 Err(_) => {
                     return Response::builder()
                         .header("Content-Type", "text/plain")
@@ -32,6 +34,8 @@ pub async fn pdf_merge(
 
 
     println!("received {} PDFs", files.len());
+    
+    println!("files: {:?}", files);
 
     Response::builder()
         .header("Content-Type", "text/plain")
